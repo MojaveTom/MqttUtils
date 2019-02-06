@@ -1,0 +1,5 @@
+#marker-rule: /\/[\/\*] ?\!(.*)/||%1||Comment Bookmarks
+#marker-rule: /#[ \t]*urgent: (.*)/||Urgent||ext=.md
+#marker-rule: /function (\w+)/||%1||Function
+#marker-rule: /function (\w+)/i||%1||Function||startOver
+#marker-rule: disable=Variable
