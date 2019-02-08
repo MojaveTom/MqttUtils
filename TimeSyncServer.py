@@ -18,9 +18,18 @@ if os.path.isfile(logConfFileName):
     try:
         with open(logConfFileName, 'r') as logging_configuration_file:
             config_dict = json.load(logging_configuration_file)
+        if 'log_file_path' in config_dict:
+            logPath = os.path.expandvars(config_dict['log_file_path'])
+            os.makedirs(logPath, exist_ok=True)
+        else:
+            logPath=""
+        for p in config_dict['handlers'].keys():
+            if 'filename' in config_dict['handlers'][p]:
+                config_dict['handlers'][p]['filename'] = os.path.join(logPath, config_dict['handlers'][p]['filename'])
         logging.config.dictConfig(config_dict)
-    except:
+    except Exception as e:
         print("loading logger config from file failed.")
+        print(e)
         pass
 
 logger = logging.getLogger(__name__)
