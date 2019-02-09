@@ -12,7 +12,7 @@ import logging.handlers
 import json
 
 ProgName, ext = os.path.splitext(os.path.basename(sys.argv[0]))
-ProgPath = os.path.dirname(sys.argv[0])
+ProgPath = os.path.dirname(os.path.realpath(sys.argv[0]))
 logConfFileName = os.path.join(ProgPath, ProgName + '_loggingconf.json')
 if os.path.isfile(logConfFileName):
     try:
