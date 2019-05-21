@@ -26,16 +26,17 @@
 #
 #    Script is run in the source directory.
 #
+programName=MqttToDatabase
 
 declare -i waitCount=20     #  Will cause us to give up clean quit after 200 seconds.
-# Get pid of WeatherReader process.
-# Look for "WeatherReader" at the end of the process status entry
-# wpid is NOT empty if the WeatherReader application is running, and the status is true.
-if wpid=$(pgrep "MqttToDatabase.py\$")
+# Get pid of process.
+# Look for at the end of the process status entry
+# wpid is NOT empty if the application is running, and the status is true.
+if wpid=$(pgrep -f "${programName}.py$")
 then
-    touch $HOME/.CloseMqttToDatabase       # Create .CloseMqttToDatabase file if not exist.
-    while wpid=$(pgrep "MqttToDatabase.py\$")
-    do      ##  Wait for TimeSyncServer program to see .CloseMqttToDatabase file and quit.
+    touch $HOME/.Close${programName}       # Create .Close${programName} file if not exist.
+    while wpid=$(pgrep -f "${programName}.py$")
+    do      ##  Wait for TimeSyncServer program to see .Close${programName} file and quit.
         sleep 10
         ## But don't wait forever.
         if [ $((--waitCount)) -lt 0 ]; then break; fi
@@ -45,18 +46,48 @@ fi
 # if wpid is not empty, clean termination above did not work.
 if [ -n "$wpid" ]; then
     kill $wpid                          # kill the process
-    rm $HOME/.CloseMqttToDatabase    # remove the .CloseMqttToDatabase file
-                                        # so it won't kill the process
-                                        # immediately after starting.
 fi
+
+rm -f $HOME/.Close${programName}    # remove the quit file
+                                    # so it won't kill the process
+                                    # immediately after starting.
 
 # sleep for 10 seconds
 sleep 10
 
-# restart MqttToDatabase.py program
-####   MAKE SURE THERE IS A LINK TO THE MqttToDatabase.py EXECUTABLE
+## if there is an "at" job scheduled for this program, remove it before starting another.
+for j in $(at -l | cut -f1)  # get a list of pids for my "at" jobs.
+do
+  # The last lines of the script restart it; extract the file name from the script.
+  jobFile=$(at -c $j | tail -n4 | grep 'at -f.*.sh' | sed -E s/'at -f(.*sh ).*/\1/')
+  if [ -n "$jobFile" ]      # ignore empty jobFiles
+  then
+    if [ $jobFile = ${0##*/} ]      # if the file name from the "at" script matches us
+    then                            # remove it from the list
+#      echo "$jobFile is pid $j"
+      at -r $j
+    fi
+  fi
+done
+## if there is an "at" job scheduled for this program, remove it before starting another.
+for j in $(at -l | cut -f1)  # get a list of pids for my "at" jobs.
+do
+  # The last lines of the script restart it; extract the file name from the script.
+  jobFile=$(at -c $j | tail -n4 | grep 'at -f.*.sh' | sed -E s/'at -f(.*sh ).*/\1/')
+  if [ -n "$jobFile" ]      # ignore empty jobFiles
+  then
+    if [ $jobFile = ${0##*/} ]      # if the file name from the "at" script matches us
+    then                            # remove it from the list
+#      echo "$jobFile is pid $j"
+      at -r $j
+    fi
+  fi
+done
+
+# restart ${programName}.py program
+####   MAKE SURE THERE IS A LINK TO THE ${programName}.py EXECUTABLE
 #### WHERE THIS SCRIPT EXPECTS IT TO BE.
-$PWD/MqttToDatabase.py &
+$PWD/${programName}.py &
 
 # Reschedule this script to run at 2325 tomorrow.
 at -fStartMqttToDatabase.sh 2315 >/dev/null 2>&1

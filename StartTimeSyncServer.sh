@@ -26,16 +26,17 @@
 #
 #    Script is run in the source directory.
 #
+programName=TimeSyncServer
 
 declare -i waitCount=20     #  Will cause us to give up clean quit after 200 seconds.
-# Get pid of WeatherReader process.
-# Look for "WeatherReader" at the end of the process status entry
-# wpid is NOT empty if the WeatherReader application is running, and the status is true.
-if wpid=$(pgrep "TimeSyncServer.py\$")
+# Get pid of process.
+# Look for at the end of the process status entry
+# wpid is NOT empty if the application is running, and the status is true.
+if wpid=$(pgrep -f "${programName}.py$")
 then
-    touch $HOME/.CloseTimeSyncServer       # Create .CloseTimeSyncServer file if not exist.
-    while wpid=$(pgrep "TimeSyncServer.py\$")
-    do      ##  Wait for TimeSyncServer program to see .CloseTimeSyncServer file and quit.
+    touch $HOME/.Close${programName}       # Create .Close${programName} file if not exist.
+    while wpid=$(pgrep -f "${programName}.py$")
+    do      ##  Wait for TimeSyncServer program to see .Close${programName} file and quit.
         sleep 10
         ## But don't wait forever.
         if [ $((--waitCount)) -lt 0 ]; then break; fi
@@ -45,18 +46,34 @@ fi
 # if wpid is not empty, clean termination above did not work.
 if [ -n "$wpid" ]; then
     kill $wpid                          # kill the process
-    rm $HOME/.CloseTimeSyncServer    # remove the .CloseTimeSyncServer file
-                                        # so it won't kill the process
-                                        # immediately after starting.
 fi
+
+rm -f $HOME/.Close${programName}    # remove the quit file
+                                    # so it won't kill the process
+                                    # immediately after starting.
 
 # sleep for 10 seconds
 sleep 10
 
+## if there is an "at" job scheduled for this program, remove it before starting another.
+for j in $(at -l | cut -f1)  # get a list of pids for my "at" jobs.
+do
+  # The last lines of the script restart it; extract the file name from the script.
+  jobFile=$(at -c $j | tail -n4 | grep 'at -f.*.sh' | sed -E s/'at -f(.*sh ).*/\1/')
+  if [ -n "$jobFile" ]      # ignore empty jobFiles
+  then
+    if [ $jobFile = ${0##*/} ]      # if the file name from the "at" script matches us
+    then                            # remove it from the list
+#      echo "$jobFile is pid $j"
+      at -r $j
+    fi
+  fi
+done
+
 # restart WeatherReader program
 ####   MAKE SURE THERE IS A LINK TO THE TimeSyncServer.py EXECUTABLE
 #### WHERE THIS SCRIPT EXPECTS IT TO BE.
-$PWD/TimeSyncServer.py &
+$PWD/${programName}.py &
 
 # Reschedule this script to run at 2325 tomorrow.
 at -fStartTimeSyncServer.sh 2325 >/dev/null 2>&1
