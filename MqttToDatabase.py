@@ -46,7 +46,14 @@ DBConn = None
 DBCursor = None
 Topics = []    # default topics to subscribe
 mqtt_msg_table = None
-RequiredConfigParams = frozenset(('inserter_user', 'inserter_password', 'inserter_host', 'inserter_port', 'inserter_schema', 'mqtt_host', 'mqtt_port', 'mqtt_msg_table'))
+RequiredConfigParams = frozenset((   'inserter_user',
+                                     'inserter_password',
+                                     'inserter_host',
+                                     'inserter_port',
+                                     'inserter_schema',
+                                     'mqtt_host',
+                                     'mqtt_port',
+                                     'mqtt_msg_table'))
 
 def GetConfigFilePath():
     fp = os.path.join(ProgPath, 'secrets.ini')
@@ -57,7 +64,7 @@ def GetConfigFilePath():
             sys.exit(1)
     logger.info('Using configuration file at: %s', fp)
     return fp
-    
+
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -168,7 +175,7 @@ def main():
     if len(Topics) <= 0:
         logger.critical('No mqtt subscription topics given.  Must exit.')
         sys.exit(4)
-    
+
     logger.info('Database connection args: host: "%s", port: %d, User: "%s", Pass: REDACTED, Schema: "%s"', db_host, db_port, db_user, myschema)
     logger.info('Mqtt parameters:  host: "%s", port: %d, topic(s): "%s", mqtt msg table: "%s".', mqtt_host, mqtt_port, Topics, mqtt_msg_table)
 
