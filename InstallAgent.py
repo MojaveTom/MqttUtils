@@ -17,7 +17,7 @@ import logging.config
 import logging.handlers
 import json
 from getpass import getuser as getuser
-import subprocess
+import shutil
 
 ProgName, ext = os.path.splitext(os.path.basename(sys.argv[0]))
 ProgPath = os.path.dirname(os.path.realpath(sys.argv[0]))
@@ -48,9 +48,9 @@ def getPythonExecutable():
 
 def getBashExecutable():
     try:
-        path = subprocess.check_output(['which', 'bash']).decode('ascii').rstrip('\n')
-    except subprocess.CalledProcessError as err:
-        logger.warning('Attempt to get path to bash failed. "%s"'%err)
+        path = shutil.which('bash')
+    except:
+        logger.warning('Attempt to get path to bash failed.')
         return None
     path = os.path.realpath(path)
     logger.debug('Path to bash executable is: "%s"'%path)
@@ -189,7 +189,12 @@ def main():
     else:
         with open(plistFileName, mode='w') as f:
             numChars = f.write(plistContents)
-            logger.debug('Wrote %s chars to plist file.'%numChars)
+            logger.debug('Wrote %s chars to plist file.  Now set group to "wheel"'%numChars)
+            try:
+                shutil.chown(plistFileName, userName, 'wheel')
+            except:
+                logger.debug('Attempt to set group on plist file failed.')
+                pass
         if args.noStart:
             logger.info('Plist file written, but launchctl not called.')
         else:
