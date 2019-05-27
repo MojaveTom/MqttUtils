@@ -42,8 +42,10 @@ if os.path.isfile(logConfFileName):
 logger = logging.getLogger(__name__)
 logger.info('logger name is: "%s"', logger.name)
 
+########################  GLOBALS
 DBConn = None
 DBCursor = None
+dontWriteDb = False
 Topics = []    # default topics to subscribe
 mqtt_msg_table = None
 RequiredConfigParams = frozenset((   'inserter_user',
@@ -54,6 +56,7 @@ RequiredConfigParams = frozenset((   'inserter_user',
                                      'mqtt_host',
                                      'mqtt_port',
                                      'mqtt_msg_table'))
+magicQuitPath = os.path.expandvars('${HOME}/.Close%s'%ProgName)
 
 def GetConfigFilePath():
     fp = os.path.join(ProgPath, 'secrets.ini')
@@ -90,22 +93,29 @@ def on_message(client, UsersData, msg):
     logger.debug('Recieved topic "%s", Recieved message "%s", retained? %s', msg.topic, msg.payload.decode('utf-8'), msg.retain)
     if msg.retain == 0:     # => not a retained message
         SqlInsert = "INSERT INTO {table} SET topic='{topic}', message='{message}'".format(table=mqtt_msg_table, topic=msg.topic, message=msg.payload.decode('utf-8'))
-        try:
-            DBCursor.execute(SqlInsert)
-            if DBConn.in_transaction: DBConn.commit()
-            pass
-        except Error as e:
-            logger.exception("Exception when inserting a message.")
-            logger.exception("Error message is: %s", e.msg)
-        finally:
-            logger.info(SqlInsert)      # After execute SQL; want to minimize time between msg received and insert
-            pass
+        if not dontWriteDb:
+            try:
+                DBCursor.execute(SqlInsert)
+                if DBConn.in_transaction: DBConn.commit()
+                pass
+            except Error as e:
+                logger.exception("Exception when inserting a message.")
+                logger.exception("Error message is: %s", e.msg)
+            finally:
+                logger.info(SqlInsert)      # After execute SQL; want to minimize time between msg received and insert
+                pass
+        else:
+            logger.info('Query NOT executed: "%s".'%SqlInsert)
+        if os.path.exists(magicQuitPath):
+            logger.debug('Quitting because magic file exists.')
+            logger.debug('Delete magic file.')
+            os.remove(magicQuitPath)
+            logger.info('####################  MqttToDatabase quits  #####################')
+            exit(0)
 
 def on_subscribe(client, userdata, mid, granted_qos):
     logger.debug('On subscribe callback, mid = %s, userdata = "%s"', mid, userdata)
     pass
-
-logger.info("MqttToDatabase starts")
 
 RecClient = mqtt.Client()
 RecClient.on_connect = on_connect
@@ -114,7 +124,7 @@ RecClient.on_subscribe = on_subscribe
 
 
 def main():
-    global Topics, mqtt_msg_table, DBConn, DBCursor
+    global Topics, mqtt_msg_table, DBConn, DBCursor, dontWriteDb
     parser = argparse.ArgumentParser(description = 'Log MQTT messages to database.')
     parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
     parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
@@ -122,10 +132,13 @@ def main():
     parser.add_argument("-O", "--Host", dest="DbHost", action="store", help="Database host", default=None)
     parser.add_argument("-P", "--Port", dest="DbPort", action="store", help="Database host port", type=int, default=None)
     parser.add_argument("-U", "--User", dest="DbUser", action="store", help="Database user name", default=None)
-    parser.add_argument("-W", "--Password", dest="DbPass", action="store", help="Database user password", default=None)
+    parser.add_argument("-D", "--Password", dest="DbPass", action="store", help="Database user password", default=None)
     parser.add_argument("-S", "--Schema", dest="DbSchema", action="store", help="Database schema", default=None)
     parser.add_argument("-T", "--MsgTable", dest="MsgTable", action="store", help="Database table in which to store messages.", default=None)
+    parser.add_argument("-W", "--dontWriteToDB", dest="noWriteDb", action="store_true", help="Don't write to database.")
     args = parser.parse_args()
+
+    dontWriteDb = args.noWriteDb
 
     config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
     configFile = GetConfigFilePath()
@@ -206,6 +219,8 @@ def main():
         logger.critical(e)
 
 if __name__ == "__main__":
+    logger.info('####################  MqttToDatabase starts  #####################')
     main()
+    logger.info('####################  MqttToDatabase all done  #####################')
     logging.shutdown()
     pass
