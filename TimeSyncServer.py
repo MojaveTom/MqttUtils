@@ -48,6 +48,7 @@ def GetConfigFilePath():
 ######################   Global declarations   #########################
 Topics = []
 RequiredConfigParams = frozenset(('mqtt_host', 'mqtt_port', 'mqtt_request_topics', 'mqtt_sync_ms_topic', 'mqtt_sync_topic'))
+magicQuitPath = os.path.expandvars('${HOME}/.Close%s'%ProgName)
 
 TIME_SYNC_UPDATE_MSEC_TOPIC =    None     # MQTT topic to subscribe for TIME updates
 TIME_SYNC_UPDATE_TOPIC      =    None     # MQTT topic to subscribe for TIME updates
@@ -92,6 +93,11 @@ def on_message(client, UsersData, msg):
     if (msg.topic in Topics):
         SendTime(client)
     logger.debug("At %s got [%s]: %s", time.asctime(), msg.topic, str(msg.payload, encoding='utf-8'))
+    if os.path.exists(magicQuitPath):
+        logger.debug('Quitting because magic file exists.')
+        logger.debug('Delete magic file.')
+        os.remove(magicQuitPath)
+        exit(0)
 
 RecClient = mqtt.Client()
 RecClient.on_connect = on_connect
@@ -102,7 +108,7 @@ def main():
 
     global Topics, TIME_SYNC_UPDATE_MSEC_TOPIC, TIME_SYNC_UPDATE_TOPIC
 
-    parser = argparse.ArgumentParser(description = 'Log MQTT messages to database.')
+    parser = argparse.ArgumentParser(description = 'Respond to Time Sync request messages with current time.')
     parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
     parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
     parser.add_argument("-p", "--port", dest="MqttPort", action="store", help="MQTT host port", type=int, default=None)
