@@ -48,6 +48,7 @@ def GetConfigFilePath():
 ######################   Global declarations   #########################
 Topics = []
 RequiredConfigParams = frozenset(('mqtt_host', 'mqtt_port'))
+magicQuitPath = os.path.expandvars('${HOME}/.Close%s'%ProgName)
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -83,6 +84,11 @@ def on_message(client, UsersData, msg):
     outLine = "%s.%06d %s @ [%s] %s"%(time.strftime("%Y-%m-%d %H:%M:%S",localtime),timeUs,time.strftime("%Z", localtime),msg.topic, msg.payload.decode('utf-8'))
     logger.debug(outLine)
     print(outLine,flush=True)       # redirect stdout to appropriate file.
+    if os.path.exists(magicQuitPath):
+        logger.debug('Quitting because magic file exists.')
+        logger.debug('Delete magic file.')
+        os.remove(magicQuitPath)
+        exit(0)
     pass
 
 logger.info("TimeStampMqttDumper starts")
@@ -96,7 +102,7 @@ mqtt.Client.subscribed_flag = False        #create flag in class
 
 def main():
     global Topics
-    parser = argparse.ArgumentParser(description = 'Log MQTT messages to database.')
+    parser = argparse.ArgumentParser(description = 'Log MQTT messages to stdOut with timestamp.')
     parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
     parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
     parser.add_argument("-p", "--port", dest="MqttPort", action="store", help="MQTT host port", type=int, default=None)
