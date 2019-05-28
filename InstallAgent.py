@@ -191,7 +191,7 @@ def main():
             numChars = f.write(plistContents)
             logger.debug('Wrote %s chars to plist file.  Now set group to "wheel"'%numChars)
             try:
-                shutil.chown(plistFileName, userName, 'wheel')
+                shutil.chown(plistFileName, user=userName, group='wheel')
             except:
                 logger.debug('Attempt to set group on plist file failed.')
                 pass
