@@ -10,7 +10,6 @@ from datetime import datetime
 import os
 import argparse
 import sys
-import time
 import paho.mqtt.client as mqtt
 import configparser
 import logging
