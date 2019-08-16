@@ -26,9 +26,12 @@ import re               #   https://docs.python.org/3/library/re.html
 import shutil           #   https://docs.python.org/3/library/shutil.html
 from getpass import getuser #   https://docs.python.org/3/library/getpass.html
 import plistlib as PL   #   https://docs.python.org/3/library/plistlib.html
+from pathlib import Path    #   https://docs.python.org/3/library/pathlib.html#module-pathlib
+import base64           #   https://docs.python.org/3/library/base64.html
 
 ProgName, ext = os.path.splitext(os.path.basename(sys.argv[0]))
 ProgPath = os.path.dirname(os.path.realpath(sys.argv[0]))
+
 #####  Setup logging; first try for file specific, and if it doesn't exist, use a folder setup file.
 logConfFileName = os.path.join(ProgPath, ProgName + '_loggingconf.json')
 if not os.path.isfile(logConfFileName):
@@ -64,47 +67,103 @@ else:
 logger = logging.getLogger(__name__)
 logger.info('logger name is: "%s"', logger.name)
 
-def getPythonExecutable():
-    return os.path.realpath(sys.executable)
+#######################   GLOBALS   ########################
 
-def getBashExecutable():
-    try:
-        path = shutil.which('bash')
-    except:
-        logger.warning('Attempt to get path to bash failed.')
-        return None
-    path = os.path.realpath(path)
-    logger.debug('Path to bash executable is: "%s"'%path)
-    return path
-
-knownExecutables = {
-    '.py': getPythonExecutable
-    , '.sh': getBashExecutable
-    , '': getBashExecutable         #  Assume no extension => bash
-    }
-
-'''     Unsupported plist keys (for user agents):
-  <key>UserName</key>
-  <string>{userName}</string>
-  <key>GroupName</key>
-  <string>{groupName}</string>
-'''
 myDomain = 'net.demayfamily'
+HomePath = os.path.expandvars('$HOME')
+PlistFileDir = os.path.join(HomePath, 'Library', 'LaunchAgents')
+PrevTimeStamp = int(time.time()*1000000)    # current microsec since epoch
 
+#######################   FUNCTIONS   ########################
+
+#############  getTargetExecutable
+def getTargetExecutable(targetProgFile):
+
+    #########  getPythonExecutable
+    def getPythonExecutable():
+        return os.path.realpath(sys.executable)
+
+    #########  getBashExecutable
+    def getBashExecutable():
+        try:
+            path = shutil.which('bash')
+        except:
+            logger.warning('Attempt to get path to bash failed.')
+            return None
+        path = os.path.realpath(path)
+        logger.debug('Path to bash executable is: "%s"'%path)
+        return path
+
+    knownExecutables = {
+        '.py': getPythonExecutable
+        , '.sh': getBashExecutable
+        , '': getBashExecutable         #  Assume no extension => bash
+        }
+
+    _, targetProgExt = os.path.splitext(os.path.basename(targetProgFile))
+    if targetProgExt == "":         # targetProgExt is empty, try first line of file to get kind
+        with open(targetProgFile) as fp:
+            l = fp.readline().rstrip()  # first line of file with trailing white space removed.
+            m = re.search(r'^#!.*?(\w+$)', l)    # if line starts with "#!" get last word on line.
+            if m is not None:
+                targetProgExt = m[1]
+                if 'python' in targetProgExt:
+                    targetProgExt = '.py'
+                elif 'sh' in targetProgExt:
+                    targetProgExt = '.sh'
+                else:
+                    targetProgExt = 'unknown'
+            ## leave targetProgExt as empty => bash
+            # else:
+            #     targetProgExt = 'unknown'
+    if targetProgExt not in knownExecutables:
+        logger.warning("I don't know how to find an executable for extension: '%s'"%targetProgExt)
+        raise UserWarning("I don't know how to find an executable for extension: '%s'"%targetProgExt)
+    return knownExecutables[targetProgExt]()
+
+#############  removeCurrentAgent
+def removeCurrentAgent(targetProgName):
+    '''
+    Unloads ALL loaded agents with our domain and the target file name.
+    Deletes associated .plist files from ${HOME}/Library/LaunchAgents.
+
+    targetProgName is the name of the executable without the path or extension.
+    '''
+    logger.debug('----- Remove ALL agents with domain "%s" and name "%s".'%(myDomain, targetProgName))
+    pfd=Path(PlistFileDir)
+    plistFiles= list(pfd.glob(myDomain + '*' + targetProgName + '.plist'))
+    for plistFileName in plistFiles:
+        logger.info('Stopping, removing Agent: "%s"'%plistFileName)
+        logger.debug('Launchctl stop service.')
+        retCode = os.system('launchctl stop %s'%plistFileName)
+        logger.debug('Launchctl "stop" exited with status: %s, now unload service.'%retCode)
+        retCode = os.system('launchctl unload %s'%plistFileName)
+        logger.debug('Launchctl "unload" exited with status: %s, now delete plist file.'%retCode)
+        try:
+            os.remove(plistFileName)
+            logger.debug('Removed file "%s"'%plistFileName)
+        except:
+            logger.debug('Attempted removal of "%s" did not succeed.'%plistFileName)
+            pass
+
+#############  main
 def main():
+    global PrevTimeStamp
+
     plistDict =  {  'Label': '{myDomain}.{progName}',
                     'Umask': '0002',
                     'ProgramArguments': ['{executablePath}', '{progFile}'],
                     'RunAtLoad': True,
                     'KeepAlive': True,
                     'WorkingDirectory': '{progPath}',
-                    'StandardErrorPath': '{homePath}/Logs/{progName}/error.log',
-                    'StandardOutPath': '{homePath}/Logs/{progName}/output.log',
+                    'StandardErrorPath': '{HomePath}/Logs/{progName}/error.log',
+                    'StandardOutPath': '{HomePath}/Logs/{progName}/output.log',
                     'EnvironmentVariables': {}
                 }
+    labelTemplate = '{myDomain}.{UID}.{targetProgName}'
 
     parser = argparse.ArgumentParser(description = 'Install user level agent and start it.',
-        epilog='''The target program is expected to run indefinitely.''')
+        epilog='''The target program is expected to run indefinitely (default) or as defined by additional launchctl args.''')
     parser.add_argument("target", help="Target program and command line arguments for the target.")
     parser.add_argument("--IAR", "--IARemove", dest="remove", action="store_true", help="Stops agent, unloads agent, deletes agent's plist file.  Other flags ignored.")
     parser.add_argument("--IAk", "--IAkeepAlive", dest="keepAlive", action="store_true", help="Sets KeepAlive flag in plist to true.")
@@ -128,60 +187,37 @@ def main():
         return(2)
     targetProgPath = os.path.dirname(targetProgFile)
     targetProgName, targetProgExt = os.path.splitext(os.path.basename(targetProgFile))
-    if targetProgExt == "":         # targetProgExt is empty, try first line of file to get kind
-        with open(targetProgFile) as fp:
-            l = fp.readline().rstrip()  # first line of file with trailing white space removed.
-            m = re.search(r'^#!.*?(\w+$)', l)    # if line starts with "#!" get last word on line.
-            if m is not None:
-                targetProgExt = m[1]
-                if 'python' in targetProgExt:
-                    targetProgExt = '.py'
-                elif 'sh' in targetProgExt:
-                    targetProgExt = '.sh'
-                else:
-                    targetProgExt = 'unknown'
-            ## leave targetProgExt as empty => bash
-            # else:
-            #     targetProgExt = 'unknown'
 
-    homePath = os.path.expandvars('$HOME')
-    userName = getuser()
+    logger.debug('AbsolutePath of home directory is "%s"'%HomePath)
     logger.debug('Absolute path to target "%s"'%targetProgFile)
     logger.debug('Absolute path of target directory "%s"'%targetProgPath)
     logger.debug('Program name is "%s", the extension is "%s"'%(targetProgName, targetProgExt))
-    logger.debug('AbsolutePath of home directory is "%s"'%homePath)
-    plistDict['Label'] = myDomain + '.' + targetProgName
-    plistFileName = os.path.join(homePath
-        , 'Library'
-        , 'LaunchAgents'
-        , plistDict['Label'] + '.plist')
-    logger.debug('Destination for plist file is: "%s"'%plistFileName)
+    timeStamp = int(time.time()*1000000)    # current microsec since epoch
+    if timeStamp == PrevTimeStamp:
+        #    If we're on a system that has only 1 second resolution for time since epoch,
+        # make the timestamp unique by adding 1 microsec to the previous timestamp.
+        timeStamp = PrevTimeStamp + 1
+    PrevTimeStamp = timeStamp
+    UID = base64.urlsafe_b64encode(timeStamp.to_bytes((timeStamp.bit_length() + 7)//8,'big')).strip(b'=').decode('UTF-8')
+    label = labelTemplate.format(myDomain=myDomain, UID=UID, targetProgName=targetProgName)
+    plistDict['Label'] = label
+
+    # Remove current agent.
+    removeCurrentAgent(targetProgName)
 
     ####   Remove option processing.
     if args.remove:
-        if os.path.exists(plistFileName):
-            logger.info('Stopping, removing Agent.')
-            logger.debug('Launchctl stop service.')
-            retCode = os.system('launchctl stop %s'%plistFileName)
-            logger.debug('Launchctl "stop" exited with status: %s, now unload service.'%retCode)
-            retCode = os.system('launchctl unload %s'%plistFileName)
-            logger.debug('Launchctl "unload" exited with status: %s, now delete plist file.'%retCode)
-            try:
-               os.remove(plistFileName)
-               logger.debug('Removed file "%s"'%plistFileName)
-            except:
-                logger.debug('Attempted removal of "%s" did not succeed.'%plistFileName)
-                pass
-        else:
-            logger.info('Removing plist: plist file "%s" does not exist; nothing to do.'%plistFileName)
         return(0)
     ####    Finished removing
 
-    if targetProgExt not in knownExecutables:
-        logger.warning("I don't know how to find an executable for extension: '%s'"%targetProgExt)
-        return 1
+    plistFileName = os.path.join(PlistFileDir, label + '.plist')
+    logger.debug('  Destination for plist file is: "%s"'%plistFileName)
+    try:
+        executablePath = getTargetExecutable(targetProgFile)
+    except Exception as e:
+        logger.exception(e)
+        raise
 
-    executablePath = knownExecutables[targetProgExt]()
     logger.debug('The path to the executable is "%s"'%executablePath)
     plistDict['ProgramArguments'][0] = executablePath
     plistDict['ProgramArguments'][1] = targetProgFile
@@ -199,11 +235,10 @@ def main():
             for thisItem in additionalItems:
                 if not isinstance(thisItem, dict):
                     raise UserWarning('Each additional item must be a dict.')
+                logger.debug('Adding item: "%s" to plist dictionary.'%thisItem)
                 plistDict.update(thisItem)
-
     except UserWarning as w:
         logger.exception(w)
-
     except Exception as e:
         logger.critical('JSON for additional items is malformed.')
         logger.exception(e)
@@ -219,52 +254,37 @@ def main():
     for k in envVars:
         plistDict['EnvironmentVariables'][k] = os.environ[k]
 
-    # launchctl creates the StandardErrorPath and StandardOutPath as owned by root.
-    # Then when the program starts and tries to write to the files, startup fails.
-    #   If the directories already exist, launchctl leaves them alone.
-    targetLogPath = os.path.join(homePath, 'Logs', targetProgName)
-    os.makedirs(targetLogPath, exist_ok=True)
+    targetLogPath = os.path.join(HomePath, 'Logs', targetProgName)
     plistDict['RunAtLoad'] = args.runAtLoad
     plistDict['KeepAlive'] = args.keepAlive
     plistDict['WorkingDirectory'] = targetProgPath
     plistDict['StandardOutPath'] = os.path.join(targetLogPath, 'output.log')
     plistDict['StandardErrorPath'] = os.path.join(targetLogPath, 'error.log')
+
     plistContents = PL.dumps(plistDict, sort_keys = False).decode('UTF-8')
-    # plistContents = plistTemplate.format(myDomain = myDomain,
-    #             progName = targetProgName,
-    #             userName = userName,
-    #             groupName = groupName,
-    #             progFile = targetProgFile,
-    #             progPath = targetProgPath,
-    #             executablePath = executablePath,
-    #             homePath = homePath,
-    #             additionalArgs = additionalArgs,
-    #             RunAtLoad = 'true' if args.RunAtLoad else 'false',
-    #             additionalItems = additionalItems,
-    #             PATH = PATH,
-    #             host = host,
-    #             PrivateConfig = PrivateConfig,
-    #             keepAlive = 'true' if args.keepAlive else 'false')
     logger.debug('Contents of plist file are to be:\n%s'%plistContents)
     if args.noWrite:
         logger.info('Plist file NOT written to LanchAgents NOR started.')
     else:
+        # launchctl creates the StandardErrorPath and StandardOutPath as owned by root.
+        # Then when the program starts and tries to write to the files, startup fails.
+        #   If the directories already exist, launchctl leaves them alone.
+        os.makedirs(targetLogPath, exist_ok=True)
+
         with open(plistFileName, mode='w') as f:
             numChars = f.write(plistContents)
-            logger.debug('Wrote %s chars to plist file.  Now set group to "wheel"'%numChars)
-            try:
-                shutil.chown(plistFileName, user=userName, group='wheel')
-            except:
-                logger.debug('Attempt to set group on plist file failed.')
-                pass
+            logger.debug('Wrote %s chars to plist file.'%numChars)
+            # try:
+            #     userName = getuser()
+            #     logger.debug('Set user to "%s", group to "wheel"'%userName)
+            #     shutil.chown(plistFileName, user=userName, group='wheel')
+            # except:
+            #     logger.debug('Attempt to set group on plist file failed.')
+            #     pass
         if args.noStart:
             logger.info('Plist file written, but launchctl not called.')
         else:
-            logger.debug('Launchctl stop service (fails if not running).')
-            retCode = os.system('launchctl stop %s'%plistFileName)
-            logger.debug('Launchctl "stop" exited with status: %s, now unload service.'%retCode)
-            retCode = os.system('launchctl unload %s'%plistFileName)
-            logger.debug('Launchctl "unload" exited with status: %s, now load service.'%retCode)
+            logger.debug('Do launchctl load of %s.'%plistFileName)
             retCode = os.system('launchctl load %s'%plistFileName)
             logger.debug('Launchctl "load" exited with status: %s.'%retCode)
             pass
