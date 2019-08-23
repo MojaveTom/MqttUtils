@@ -52,7 +52,7 @@ if os.path.isfile(logConfFileName):
                 # print('Setting handler %s filename to: %s'%(p, fn))
 
         # # program specific logging configurations:
-        config_dict["handlers"]["debugconsole"]["level"] = 'NOTSET'
+        # config_dict["handlers"]["debugconsole"]["level"] = 'NOTSET'
         # # config_dict["handlers"]["debug_file_handler"]["class"] = 'logging.FileHandler'
         # config_dict["handlers"]["debug_file_handler"]["mode"] = '\'w\''
 
