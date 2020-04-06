@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import mysql.connector
+import mysql.connector      #   https://dev.mysql.com/doc/connector-python/en/
 from mysql.connector import Error
 import time
 import datetime
