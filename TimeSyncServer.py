@@ -56,12 +56,12 @@ TIME_SYNC_UPDATE_TOPIC      =    None     # MQTT topic to subscribe for TIME upd
 DontPublish = False
 
 def SendTime(client):
-    if !DontPublish:
+    if not DontPublish:
         client.publish(TIME_SYNC_UPDATE_MSEC_TOPIC, str("%1.3f"%time.time()))
         client.publish(TIME_SYNC_UPDATE_TOPIC, str(round(time.time())))
         logger.debug("sent time at %s", time.asctime())
     else:
-        logger.debug(f'Would have published: {TIME_SYNC_UPDATE_MSEC_TOPIC}: {str("%1.3f"%time.time()} ')
+        logger.debug(f'Would have published: {TIME_SYNC_UPDATE_MSEC_TOPIC}: {str("%1.3f"%time.time())} ')
         logger.debug(f'Would have published: {TIME_SYNC_UPDATE_TOPIC}: {round(time.time())} ')
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -118,7 +118,7 @@ def main():
     parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
     parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
     parser.add_argument("-p", "--port", dest="MqttPort", action="store", help="MQTT host port", type=int, default=None)
-    parser.add_argument("-P", "--DontPublish", dest="dontpub", action="storetrue", help="Do not actually publish time syncs.", type=bool, default=False)
+    parser.add_argument("-P", "--DontPublish", dest="dontpub", action="store_true", help="Do not actually publish time syncs.", default=False)
     args = parser.parse_args()
 
     config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
