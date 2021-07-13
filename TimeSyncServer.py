@@ -53,10 +53,16 @@ magicQuitPath = os.path.expandvars('${HOME}/.Close%s'%ProgName)
 TIME_SYNC_UPDATE_MSEC_TOPIC =    None     # MQTT topic to subscribe for TIME updates
 TIME_SYNC_UPDATE_TOPIC      =    None     # MQTT topic to subscribe for TIME updates
 
+DontPublish = False
+
 def SendTime(client):
-    client.publish(TIME_SYNC_UPDATE_MSEC_TOPIC, str("%1.3f"%time.time()))
-    client.publish(TIME_SYNC_UPDATE_TOPIC, str(round(time.time())))
-    logger.debug("sent time at %s", time.asctime())
+    if !DontPublish:
+        client.publish(TIME_SYNC_UPDATE_MSEC_TOPIC, str("%1.3f"%time.time()))
+        client.publish(TIME_SYNC_UPDATE_TOPIC, str(round(time.time())))
+        logger.debug("sent time at %s", time.asctime())
+    else:
+        logger.debug(f'Would have published: {TIME_SYNC_UPDATE_MSEC_TOPIC}: {str("%1.3f"%time.time()} ')
+        logger.debug(f'Would have published: {TIME_SYNC_UPDATE_TOPIC}: {round(time.time())} ')
 
 # The callback for when the client receives a CONNACK response from the server.
 # The callback for when the client receives a CONNACK response from the server.
@@ -106,12 +112,13 @@ RecClient.on_disconnect = on_disconnect
 
 def main():
 
-    global Topics, TIME_SYNC_UPDATE_MSEC_TOPIC, TIME_SYNC_UPDATE_TOPIC
+    global Topics, TIME_SYNC_UPDATE_MSEC_TOPIC, TIME_SYNC_UPDATE_TOPIC, DontPublish
 
     parser = argparse.ArgumentParser(description = 'Respond to Time Sync request messages with current time.')
     parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
     parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
     parser.add_argument("-p", "--port", dest="MqttPort", action="store", help="MQTT host port", type=int, default=None)
+    parser.add_argument("-P", "--DontPublish", dest="dontpub", action="storetrue", help="Do not actually publish time syncs.", type=bool, default=False)
     args = parser.parse_args()
 
     config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
@@ -146,7 +153,8 @@ def main():
 
     if (args.topic != None) and (len(args.topic) > 0): Topics = args.topic
     if (args.MqttHost != None) and (len(args.MqttHost) > 0): mqtt_host = args.MqttHost
-    if (args.MqttPort != None) and (len(args.MqttPort) > 0): mqtt_port = args.MqttPort
+    if (args.MqttPort != None) and (len(args.MqttPort) > 0): mqtt_port = args.MqttPort  #DontPublish
+    if (args.dontpub != None): DontPublish = args.dontpub
     mqtt_port = int(mqtt_port)
     if (mqtt_host is None) or (mqtt_port is None) or (len(Topics) == 0):
         logger.critical('No mqtt_host OR no mqtt_port OR no topics; must quit.')
