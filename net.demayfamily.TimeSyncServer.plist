@@ -34,6 +34,8 @@
     <string>/Users/Utilities</string>
     <key>PATH</key>
     <string>.:/Users/utilities/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/opt/homebrew/bin:/opt/homebrew/sbin</string>
+    <key>PYTHONPATH</key>
+    <string>.:/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib/python3.8/site-packages:/Users/utilities/VSCodeProjects/InverterReader/pysunspec</string>
   </dict>
 </dict>
 </plist>
