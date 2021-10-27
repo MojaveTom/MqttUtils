@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.demayfamily.MqttToDatabase</string>
+  <key>Umask</key>
+  <string>0002</string>
+  <key>UserName</key>
+  <string>Utilities</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/Utilities/VSCodeProjects/MqttUtils/MqttToDatabase.py</string>
+    <string>--dontWriteToDB</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>/Users/Utilities/VSCodeProjects/MqttUtils</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Utilities/Logs/MqttToDatabase/error.log</string>
+  <key>StandardOutPath</key>
+  <string>/Users/Utilities/Logs/MqttToDatabase/output.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOST</key>
+    <string>SS_Logger</string>
+    <key>PrivateConfig</key>
+    <string>/Users/Utilities/Private/secrets.ini</string>
+    <key>HOME</key>
+    <string>/Users/Utilities</string>
+    <key>PATH</key>
+    <string>.:/Users/utilities/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/opt/homebrew/bin:/opt/homebrew/sbin</string>
+    <key>PYTHONPATH</key>
+    <string>.:/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib/python3.8/site-packages:/Users/utilities/VSCodeProjects/InverterReader/pysunspec</string>
+  </dict>
+</dict>
+</plist>
