@@ -278,8 +278,13 @@ def main():
             DBConn.disconnect()
 
 if __name__ == "__main__":
-    info(f'####################  {ProgName} starts  #####################')
-    main()
-    info(f'####################  {ProgName} all done  #####################')
+    info(f'####################  MqttToDatabase starts @{datetime.now()}  #####################')
+    try:
+        main()
+    except:
+        pass     # On any exception, sleep awhile, then quit.  Launchctl will restart.
+    info('Main returned; program errored somehow.  Wait 10 min, then quit -- Launchctl will restart us.')
+    time.sleep(600)
+    info(f'####################  MqttToDatabase all done @{datetime.now()}  #####################')
     logging.shutdown()
     pass
