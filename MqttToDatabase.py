@@ -102,9 +102,12 @@ def on_message(client, UsersData, msg):
     debug('in on_message: client "%s", UsersData "%s", msg "%s"', client, UsersData, msg)
     try:
         decodedMsg = msg.payload.decode("utf-8")
-    except Error as e:
-        logger.warning("Exception decoding a message; message ignored.")
-        logger.warning("Error message is: %s", e.msg)
+    except UnicodeError as e:
+        logger.warning("Error message is: %s", e)
+        h = f'{msg.payload.hex(" ",1)}'
+        # logger.warning(f'hexified msg.payload {h}')
+        b = bytearray.fromhex(h)
+        logger.warning(f'''Exception decoding a message "{b}"; message ignored.''')
         return
     msgTopic = str(msg.topic)
     debug(f'Recieved topic "{msgTopic}", Recieved message {decodedMsg}, retained? {msg.retain}')
@@ -167,7 +170,7 @@ def on_message(client, UsersData, msg):
                 except Exception as e:
                     logger.exception(e)
             Topics.add(thisDeviceTopic)
-        
+
         if msgTopic.startswith('homeassistant') and msgTopic.endswith('config'):   # Presumably this is a homeassistant config message.
             debug(f"Retained message is a homeassistant config message.")
             deviceId = msgDict.get('uniq_id')
@@ -283,13 +286,13 @@ def main():
             DBConn.disconnect()
 
 if __name__ == "__main__":
-    info(f'####################  MqttToDatabase starts @{datetime.now()}  #####################')
+    info(f'####################  MqttToDatabase starts @{dt.now()}  #####################')
     try:
         main()
     except:
         pass     # On any exception, sleep awhile, then quit.  Launchctl will restart.
     info('Main returned; program errored somehow.  Wait 10 min, then quit -- Launchctl will restart us.')
     time.sleep(600)
-    info(f'####################  MqttToDatabase all done @{datetime.now()}  #####################')
+    info(f'####################  MqttToDatabase all done @{dt.now()}  #####################')
     logging.shutdown()
     pass
