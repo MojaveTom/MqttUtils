@@ -1,0 +1,205 @@
+ProgramDescription = "Log sensor MQTT messages to database."
+
+# the 'configName' parameter picks up the value from the .ini files parameter by that name.
+[[Parameters]]
+paramName = "Topic"
+type = "str"
+description = "MQTT topic to which to subscribe.  May be specified multiple times."
+default = ""
+configName = "mqtt_topics"
+[Parameters.argParserArgs]
+long = "--topic"
+dest = "Topic"
+action = "append"
+
+[[Parameters]]
+paramName = "MqttHost"
+type = "str"
+description = "MQTT host"
+default = ""
+configName = "mqtt_host"
+[Parameters.argParserArgs]
+long = "--host"
+short = "-o"
+dest = "MqttHost"
+action = "store"
+
+[[Parameters]]
+paramName = "DbUser"
+type = "str"
+description = "Database user name"
+default = ""
+configName = "inserter_user"
+[Parameters.argParserArgs]
+long = "--User"
+short = "-U"
+dest = "DbUser"
+action = "store"
+
+[[Parameters]]
+paramName = "DbPass"
+type = "str"
+description = "Database user password"
+default = ""
+configName = "inserter_password"
+[Parameters.argParserArgs]
+long = "--Password"
+short = "-D"
+dest = "DbPass"
+action = "store"
+
+[[Parameters]]
+paramName = "DbSchema"
+type = "str"
+description = "Database schema"
+default = ""
+configName = "inserter_schema"
+[Parameters.argParserArgs]
+long = "--Schema"
+short = "-S"
+dest = "DbSchema"
+action = "store"
+
+[[Parameters]]
+paramName = "MsgTable"
+type = "str"
+description = "Database table in which to store messages."
+default = ""
+configName = "mqtt_msg_table"
+[Parameters.argParserArgs]
+long = "--MsgTable"
+short = "-T"
+dest = "MsgTable"
+action = "store"
+
+[[Parameters]]
+paramName = "DeviceTable"
+type = "str"
+description = "Database table in which to store mqtt device info."
+default = ""
+configName = "mqtt_device_table"
+[Parameters.argParserArgs]
+long = "--DeviceTable"
+short = "-V"
+dest = "DeviceTable"
+action = "store"
+
+[[Parameters]]
+paramName = "DbHost"
+type = "str"
+description = "Database host"
+default = ""
+configName = "inserter_host"
+[Parameters.argParserArgs]
+long = "--DbHost"
+short = "-O"
+dest = "DbHost"
+action = "store"
+
+[[Parameters]]
+paramName = "MqttPort"
+type = "int"
+description = "MQTT host port"
+default = "1883"
+configName = "mqtt_port"
+[Parameters.argParserArgs]
+long = "--port"
+short = "-p"
+dest = "MqttPort"
+action = "store"
+
+[[Parameters]]
+paramName = "DbPort"
+type = "int"
+description = "Database host port"
+default = "3306"
+configName = "inserter_port"
+[Parameters.argParserArgs]
+long = "--DbPort"
+short = "-P"
+dest = "DbPort"
+action = "store"
+
+[[Parameters]]
+paramName = "DontWriteDb"
+type = "bool"
+description = "Do not write to database."
+default = ""        # bool("") is false; bool("nonempty") is true
+[Parameters.argParserArgs]
+long = "--dontWriteToDB"
+short = "-W"
+dest = "DontWriteDb"
+action = "store_true"
+
+[[Parameters]]
+paramName = "OnlyWriteDevices"
+type = "bool"
+description = "Only write device info to database.  Implies DontWriteDb = true"
+default = ""        # bool("") is false; bool("nonempty") is true
+[Parameters.argParserArgs]
+long = "--OnlyWriteDevices"
+short = "-w"
+dest = "OnlyWriteDevices"
+action = "store_true"
+
+# [[Parameters]]
+# paramName = "ss_my_schema"
+# type = "str"
+# description = "The Steamboat database schema that contains the my data."
+# configName = "ss_my_schema"
+# default = "Steamboat"
+
+# [[Parameters]]
+# paramName = "rc_my_schema"
+# type = "str"
+# description = "The Ridgecrest database schema that contains the my data."
+# configName = "rc_my_schema"
+# default = "demay_farm"
+
+# [[Parameters]]
+# paramName = "rc_database_host"
+# type = "str"
+# description = "The IP address of the Ridgecrest database host."
+# configName = "rc_database_host"
+
+# [[Parameters]]
+# paramName = "ss_database_host"
+# type = "str"
+# description = "The IP address of the Steamboat database host."
+# configName = "ss_database_host"
+
+# [[Parameters]]
+# paramName = "rc_database_port"
+# type = "int"
+# description = "The port on the Ridgecrest database host."
+# configName = "rc_database_port"
+
+# [[Parameters]]
+# paramName = "ss_database_port"
+# type = "int"
+# description = "The port on the Steamboat database host."
+# configName = "ss_database_port"
+
+# [[Parameters]]
+# paramName = "rc_database_reader_user"
+# type = "str"
+# description = "The database user to use to access the Ridgecrest database host."
+# configName = "rc_database_reader_user"
+
+# [[Parameters]]
+# paramName = "ss_database_reader_user"
+# type = "str"
+# description = "The database user to use to access the Steamboat database host."
+# configName = "ss_database_reader_user"
+
+# [[Parameters]]
+# paramName = "rc_database_reader_password"
+# type = "str"
+# description = "The database user password to use to access the Ridgecrest database host."
+# configName = "rc_database_reader_password"
+
+# [[Parameters]]
+# paramName = "ss_database_reader_password"
+# type = "str"
+# description = "The database user password to use to access the Steamboat database host."
+# configName = "ss_database_reader_password"

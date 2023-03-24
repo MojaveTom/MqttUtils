@@ -1,237 +1,285 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
-import mysql.connector      # https://dev.mysql.com/doc/connector-python/en/
-from mysql.connector import Error
+import mysql.connector
+from mysql.connector import Error as SqlError
 import time
-# from datetime import date
-# from datetime import timedelta
-from datetime import datetime
-import os
-import argparse
-import sys
-import paho.mqtt.client as mqtt
+from datetime import datetime as dt #   https://docs.python.org/3/library/datetime.html#datetime-objects
+from datetime import timezone       #   https://docs.python.org/3/library/datetime.html#date-objects
+from datetime import time as dtime  #   https://docs.python.org/3/library/datetime.html#time-objects
+from datetime import timedelta      #   https://docs.python.org/3/library/datetime.html#timedelta-objects
+import os               #   https://docs.python.org/3/library/os.html
+import sys              #   https://docs.python.org/3/library/sys.html
+import re               #   https://docs.python.org/3/library/re.html
+import argparse         #   https://docs.python.org/3/library/argparse.html
+import paho.mqtt.client as mqtt     #   https://www.eclipse.org/paho/clients/python/docs/
+import paho.mqtt.publish as publish
 import configparser
 import logging
 import logging.config
 import logging.handlers
 import json
 
+from prodict import Prodict             #   https://github.com/ramazanpolat/prodict
+from progparams.ProgramParametersDefinitions import MakeParams
+from progparams.GetLoggingDict import GetLoggingDict, setConsoleLoggingLevel, setLogFileLoggingLevel, getConsoleLoggingLevel, getLogFileLoggingLevel
+
 ProgName, ext = os.path.splitext(os.path.basename(sys.argv[0]))
 ProgPath = os.path.dirname(os.path.realpath(sys.argv[0]))
-logConfFileName = os.path.join(ProgPath, ProgName + '_loggingconf.json')
-if os.path.isfile(logConfFileName):
-    try:
-        with open(logConfFileName, 'r') as logging_configuration_file:
-            config_dict = json.load(logging_configuration_file)
-        if 'log_file_path' in config_dict:
-            logPath = os.path.expandvars(config_dict['log_file_path'])
-            os.makedirs(logPath, exist_ok=True)
-        else:
-            logPath = ""
-        for p in config_dict['handlers'].keys():
-            if 'filename' in config_dict['handlers'][p]:
-                config_dict['handlers'][p]['filename'] = os.path.join(logPath, config_dict['handlers'][p]['filename'])
-        logging.config.dictConfig(config_dict)
-    except Exception as e:
-        print("loading logger config from file failed.")
-        print(e)
+
+##############Logging Settings##############
+config_dict = GetLoggingDict(ProgName, ProgPath)
+logging.config.dictConfig(config_dict)
 
 logger = logging.getLogger(__name__)
 logger.info('logger name is: "%s"', logger.name)
 
-# #######################  GLOBALS
+console = logger
+
+debug = logger.debug
+info = logger.info
+critical = logger.critical
+
+logger.level = logging.DEBUG
+
+########################  GLOBALS
+PP = Prodict()
+
 DBConn = None
 DBCursor = None
 dontWriteDb = False
-Topics = []    # default topics to subscribe
+Topics = set()    # default topics to subscribe
 mqtt_msg_table = None
-RequiredConfigParams = frozenset(('inserter_user',
-                                  'inserter_password',
-                                  'inserter_host',
-                                  'inserter_port',
-                                  'inserter_schema',
-                                  'mqtt_host',
-                                  'mqtt_port',
-                                  'mqtt_msg_table'))
-magicQuitPath = os.path.expandvars('${HOME}/.Close%s' % ProgName)
+RequiredConfigParams = frozenset((   'inserter_user',
+                                     'inserter_password',
+                                     'inserter_host',
+                                     'inserter_port',
+                                     'inserter_schema',
+                                     'mqtt_host',
+                                     'mqtt_port',
+                                     'mqtt_msg_table'))
 
+magicQuitPath = os.path.expandvars('${HOME}/.Close%s'%ProgName)     # Don't use f'...' string since ${HOME} confuses the formatter.
 
-def GetConfigFilePath():
-    fp = os.path.join(ProgPath, 'secrets.ini')
-    if not os.path.isfile(fp):
-        fp = os.environ['PrivateConfig']
-        if not os.path.isfile(fp):
-            logger.error('No configuration file found.')
-            sys.exit(1)
-    logger.info('Using configuration file at: %s', fp)
-    return fp
+'''
+mqttmessages table creation:
+CREATE TABLE `mqttmessages` (
+  `RecTime` timestamp(6) NOT NULL DEFAULT current_timestamp(6),
+  `topic` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `message` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  PRIMARY KEY (`RecTime`),
+  UNIQUE KEY `RecTime` (`RecTime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
+mqttdevice table creation:
+CREATE OR REPLACE TABLE `mqttdevices` (
+  `deviceid` char(64) NOT NULL,
+  `statustime` varchar(30) DEFAULT NULL,
+  `message` varchar(511) DEFAULT NULL,
+  PRIMARY KEY (`deviceid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+'''
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
-    global Topics, DBConn, DBCursor
+    global Topics
     if rc == mqtt.MQTT_ERR_SUCCESS:
-        logger.debug('Connected with result code %s', str(rc))
+        debug('Connected with result code %s',str(rc))
     else:
-        logger.error('Connected with error code %s', str(rc))
+        logger.error('Connected with error code %s',str(rc))
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     try:
-        logger.debug("Subscribing to topic(s): %s", Topics)
-        (result, mid) = client.subscribe(list(zip(Topics, [0] * len(Topics))))
-        logger.debug('Subscription result: %s, message id is: %s', result, mid)
+        debug(f"Subscribing to topic(s): {Topics}")
+        (result, mid) = client.subscribe(list(zip(Topics,[0]*len(Topics))))
+        debug('Subscription result: %s, message id is: %s', result, mid)
     except Exception as e:
         logger.exception(e)
 
-
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, UsersData, msg):
-    global Topics, mqtt_msg_table, DBConn, DBCursor
-    logger.debug('in on_message: client "%s", UsersData "%s", msg "%s"', client, UsersData, msg)
-    logger.debug('Recieved topic "%s", Recieved message "%s", retained? %s', msg.topic, msg.payload.decode('utf-8'), msg.retain)
-    if msg.retain == 0:     # => not a retained message
-        SqlInsert = "INSERT INTO {table} SET topic='{topic}', message='{message}'".format(table=mqtt_msg_table, topic=msg.topic, message=msg.payload.decode('utf-8'))
-        if not dontWriteDb:
-            try:
-                DBCursor.execute(SqlInsert)
-                if DBConn.in_transaction:
-                    DBConn.commit()
-            except Error as e:
-                logger.exception("Exception when inserting a message.")
-                logger.exception("Error message is: %s", e.msg)
-                raise
-            finally:
-                logger.info(SqlInsert)      # After execute SQL; want to minimize time between msg received and insert
-        else:
-            logger.info(f'Query NOT executed: "{SqlInsert}".')
-        if os.path.exists(magicQuitPath):
-            logger.debug('Quitting because magic file exists.')
-            logger.debug('Delete magic file.')
-            os.remove(magicQuitPath)
-            logger.info('####################  MqttToDatabase quits  #####################')
-            time.sleep(120)     # Launchctl will restart us; wait a while before exiting.
-            exit(0)
+    global Topics, DBConn, DBCursor, PP
+    debug('in on_message: client "%s", UsersData "%s", msg "%s"', client, UsersData, msg)
+    decodedMsg = msg.payload.decode("utf-8")
+    msgTopic = str(msg.topic)
+    debug(f'Recieved topic "{msgTopic}", Recieved message {decodedMsg}, retained? {msg.retain}')
+            # check for quit condition
+    if os.path.exists(magicQuitPath):
+        debug(f'Quitting because magic file ("{magicQuitPath}") exists.')
+        debug('Delete magic file.')
+        os.remove(magicQuitPath)
+        info('####################  MqttToDatabase quits  #####################')
+        exit(0)
 
+    schema = PP.get('DbSchema')     # Handy names for important items
+    table = PP.get('MsgTable')
+            # For some of my ESP8266 machines, the retain flag is not consistently getting set.
+    if msg.retain == 0 and not msgTopic.endswith('/status'):     # => not a retained message
+        if schema is not None and table is not None:
+            SqlInsert = f"""INSERT INTO `{schema}`.`{table}` SET topic='{msgTopic}', message='{decodedMsg}'"""
+            if not dontWriteDb:
+                try:
+                    DBCursor.execute(SqlInsert)
+                    if DBConn.in_transaction: DBConn.commit()
+                except SqlError as e:
+                    logger.exception("Exception when inserting a message.")
+                    logger.exception("SqlError message is: %s", e.msg)
+                finally:
+                    info(f'Inserted message: "{SqlInsert}"')      # After execute SQL; want to minimize time between msg received and insert
+            else:
+                info('Query NOT executed: "%s".'%SqlInsert)
+        else:
+            debug(f'Sql insert message query NOT executed because either the MsgTable or the DBSchema was not defined.')
+
+    else:       # Retained message -- ignored if not a known status message
+        debug(f'Retained message received.')
+        try:
+            msgDict = json.loads(msg.payload)
+            debug(f'The message payload was successfully decoded to a python object.  {msgDict}')
+        except json.JSONDecodeError as e:
+            debug(f'The retained message payload was not valid JSON, so it is ignored.')
+            # logger.exception(e)
+            return              # Ignore retained messages that are not valid JSON.
+        deviceId = None
+        statusTime = None
+        if msgTopic.endswith('status'):   # Presumably this is one of my devices.
+            debug(f"Retained message topic ends with 'status'.")
+            deviceId = msgDict.get('MachineID')
+            if deviceId is None:
+                debug(f'"{msg.payload}" does not contain a MachineID field;  reject message.')
+                return
+            statusTime = msgDict.get('StatusTime')
+            if statusTime is None:
+                debug(f'"{msg.payload}" does not contain a StatusTime field;  reject message.')
+                return
+
+            thisDeviceTopic = f'{deviceId}/#'
+            if thisDeviceTopic not in Topics:
+                try:
+                    debug(f"Subscribing to topic from status message: {thisDeviceTopic}")
+                    (result, mid) = client.subscribe(thisDeviceTopic)
+                    debug(f'Subscription result: {result}, message id is: {mid}')
+                except Exception as e:
+                    logger.exception(e)
+            Topics.add(thisDeviceTopic)
+        
+        if msgTopic.startswith('homeassistant') and msgTopic.endswith('config'):   # Presumably this is a homeassistant config message.
+            debug(f"Retained message is a homeassistant config message.")
+            deviceId = msgDict.get('uniq_id')
+            if deviceId is None:
+                debug(f'"{decodedMsg}" does not contain a "uniq_id" field;  reject message.')
+                return
+            statusTime = dt.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z (%Z)")  # use now time since homeassistant config messages don't have a time.
+            if statusTime is None:
+                debug(f'Could not fake a status time; reject message.')
+                return
+
+        table = PP.get('DeviceTable')
+        if schema is not None and table is not None and deviceId is not None and statusTime is not None:    # we have everything we need to insert into the DeviceTable.
+            SqlInsert = f"""INSERT INTO `{schema}`.`{table}` SET deviceid='{deviceId}', message='{decodedMsg}', statustime='{statusTime}' ON DUPLICATE KEY UPDATE statustime=VALUES(statustime), message=VALUES(message)"""
+            info(SqlInsert)
+            if not dontWriteDb or PP.get('OnlyWriteDevices', False):
+                try:
+                    DBCursor.execute(SqlInsert)
+                    if DBConn.in_transaction: DBConn.commit()
+                except SqlError as e:
+                    logger.exception("Exception when inserting a device.")
+                    logger.exception("SqlError message is: %s", e.msg)
+            else:
+                info(f'''Query NOT executed: "{SqlInsert}".''')
+        else:
+            debug(f'Not all fields for device table insert are defined.')
+            debug(f'schema "{schema}", table "{table}", deviceId "{deviceId}", statusTime "{statusTime}"')
 
 def on_subscribe(client, userdata, mid, granted_qos):
-    logger.debug('On subscribe callback, mid = %s, userdata = "%s"', mid, userdata)
+    debug(f'On subscribe callback, mid = {mid}, userdata = "{userdata}"')
+    pass
+
+MqttClient = mqtt.Client()
 
 
 def main():
-    global Topics, mqtt_msg_table, DBConn, DBCursor, dontWriteDb, RecClient
+    global Topics, mqtt_msg_table, DBConn, DBCursor, dontWriteDb, MqttClient, PP
 
-    parser = argparse.ArgumentParser(description='Log MQTT messages to database.')
-    parser.add_argument("-t", "--topic", dest="topic", action="append", help="MQTT topic to which to subscribe.  May be specified multiple times.")
-    parser.add_argument("-o", "--host", dest="MqttHost", action="store", help="MQTT host", default=None)
-    parser.add_argument("-p", "--port", dest="MqttPort", action="store", help="MQTT host port", type=int, default=None)
-    parser.add_argument("-O", "--Host", dest="DbHost", action="store", help="Database host", default=None)
-    parser.add_argument("-P", "--Port", dest="DbPort", action="store", help="Database host port", type=int, default=None)
-    parser.add_argument("-U", "--User", dest="DbUser", action="store", help="Database user name", default=None)
-    parser.add_argument("-D", "--Password", dest="DbPass", action="store", help="Database user password", default=None)
-    parser.add_argument("-S", "--Schema", dest="DbSchema", action="store", help="Database schema", default=None)
-    parser.add_argument("-T", "--MsgTable", dest="MsgTable", action="store", help="Database table in which to store messages.", default=None)
-    parser.add_argument("-W", "--dontWriteToDB", dest="noWriteDb", action="store_true", help="Don't write to database.")
-    args = parser.parse_args()
+    kwargs = {}
+    cfg = MakeParams( **kwargs)
+    # setConsoleLoggingLevel(helperFunctionLoggingLevel)      # in case function changed it.
+    if cfg is None:
+        critical(f"Could not create parameters.  Must quit.")
+        return
+    else:
+        args = Prodict.from_dict(cfg)
+        debug(f"MakeParams returns non None dictionary, so args (and PP) become: {args}")
+        PP = Prodict.from_dict(cfg)
 
-    dontWriteDb = args.noWriteDb
+    dontWriteDb = cfg['DontWriteDb'] or cfg['OnlyWriteDevices']
 
-    config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
-    configFile = GetConfigFilePath()
+    db_user = cfg['DbUser']
+    db_pwd  = cfg['DbPass']
+    db_host = cfg['DbHost']
+    db_port = int(cfg['DbPort'])
+    myschema = cfg['DbSchema']
 
-    config.read(configFile)
-    cfgSection = os.path.basename(sys.argv[0]) + "/" + os.environ['HOST']
-    logger.info("INI file cofig section is: %s", cfgSection)
-    if not config.has_section(cfgSection):
-        logger.critical('Config file "%s", has no section "%s".', configFile, cfgSection)
-        sys.exit(2)
-    if set(config.options(cfgSection)) < RequiredConfigParams:
-        logger.critical('Config  section "%s" does not have all required params: "%s", it has params: "%s".', cfgSection, RequiredConfigParams, set(config.options(cfgSection)))
-        sys.exit(3)
+    mqtt_host = cfg['MqttHost']
+    mqtt_port = cfg['MqttPort']
+    mqtt_msg_table  = cfg['MsgTable']
 
-    cfg = config[cfgSection]
+    t = cfg['Topic']
+    debug('Topics from config is: "%s".', t)
+    t = t.split()
+    debug('Split topics from config is: "%s".', t)
+    Topics = set(t)
+    debug('Topics from config is: "%s".', Topics)
 
-    db_user = cfg['inserter_user']
-    db_pwd = cfg['inserter_password']
-    db_host = cfg['inserter_host']
-    db_port = int(cfg['inserter_port'])
-    myschema = cfg['inserter_schema']
+    # if len(Topics) <= 0:
+    #     critical('No mqtt subscription topics given or found.  Must exit.')
+    #     sys.exit(4)
 
-    mqtt_host = cfg['mqtt_host']
-    mqtt_port = cfg['mqtt_port']
-    mqtt_msg_table = cfg['mqtt_msg_table']
+    info('Database connection args: host: "%s", port: %d, User: "%s", Pass: REDACTED, Schema: "%s"', db_host, db_port, db_user, myschema)
+    info('Mqtt parameters:  host: "%s", port: %d, topic(s): "%s", mqtt msg table: "%s".', mqtt_host, mqtt_port, Topics, mqtt_msg_table)
 
-    # Create mqtt client and establish call-backs.
-    RecClient = mqtt.Client()
-    RecClient.on_connect = on_connect
-    RecClient.on_message = on_message
-    RecClient.on_subscribe = on_subscribe
+    MqttClient.on_connect = on_connect
+    MqttClient.on_message = on_message
+    MqttClient.on_subscribe = on_subscribe
 
-    if config.has_option(cfgSection, 'mqtt_topics'):
-        t = cfg['mqtt_topics']
-        logger.debug('Topics from config is: "%s".', t)
-        t = t.split()
-        logger.debug('Split topics from config is: "%s".', t)
-        Topics = t
-        logger.debug('Topics from config is: "%s".', Topics)
+    if not dontWriteDb or PP.get('OnlyWriteDevices', False):
+        try:
+            DBConn = mysql.connector.connect(host=db_host,
+                port=db_port,
+                user=db_user,
+                password= db_pwd,
+                db=myschema,
+                charset='utf8mb4')
+            if DBConn.is_connected():
+                info('Connected to MySQL database')
+                info(DBConn)
+                DBConn.start_transaction()
+                DBCursor = DBConn.cursor()
+            else:
+                logger.error('Failed to connect to database.')
+                DBConn = None
+                DBCursor = None
+        except SqlError as e:
+            critical(e)
+            DBConn = None
+            DBCursor = None
 
-    if (args.topic is not None) and (len(args.topic) > 0): Topics = args.topic
-    if (args.MqttHost is not None) and (len(args.MqttHost) > 0): mqtt_host = args.MqttHost
-    if (args.MqttPort is not None) and (len(args.MqttPort) > 0): mqtt_port = args.MqttPort
-    if (args.MsgTable is not None) and (len(args.MsgTable) > 0): mqtt_msg_table = args.MsgTable
-    if (args.DbHost is not None) and (len(args.DbHost) > 0): db_host = args.DbHost
-    if (args.DbPass is not None) and (len(args.DbPass) > 0): db_pwd = args.DbPass
-    if (args.DbUser is not None) and (len(args.DbUser) > 0): db_user = args.DbUser
-    if (args.DbPort is not None) and (len(args.DbPort) > 0): db_port = args.DbPort
-    if (args.DbSchema is not None) and (len(args.DbSchema) > 0): myschema = args.DbSchema
-    db_port = int(db_port)
-    mqtt_port = int(mqtt_port)
-
-    if len(Topics) <= 0:
-        logger.critical('No mqtt subscription topics given.  Must exit.')
-        sys.exit(4)
-
-    logger.info('Database connection args: host: "%s", port: %d, User: "%s", Pass: REDACTED, Schema: "%s"', db_host, db_port, db_user, myschema)
-    logger.info('Mqtt parameters:  host: "%s", port: %d, topic(s): "%s", mqtt msg table: "%s".', mqtt_host, mqtt_port, Topics, mqtt_msg_table)
+    Topics.add('+/status')          # Make sure there is a topic to get status messages.
+    debug(f'The initial set of topics is {Topics}')
 
     try:
-        DBConn = mysql.connector.connect(host=db_host,
-                                         port=db_port,
-                                         user=db_user,
-                                         password=db_pwd,
-                                         db=myschema,
-                                         charset='utf8mb4')
-        if DBConn.is_connected():
-            logger.info('Connected to MySQL database')
-            logger.info(DBConn)
-            DBConn.start_transaction()
-            DBCursor = DBConn.cursor()
-            try:
-                RecClient.connect(mqtt_host, mqtt_port, 60)
-                RecClient.loop_forever()
-            except Exception as e:
-                logger.info('RecClient.loop_forever() raised exception; exit main();  Wait awhile, then quit -- Launchctl will restart us.')
-                logger.exception(e)
-                raise
-            finally:
-                logger.info('RecClient.loop_forever() returned; exit main();  Wait awhile, then quit -- Launchctl will restart us.')
-                RecClient.disconnect()
-                DBConn.disconnect()
-                return
-        else:
-            logger.error('Failed to connect to database.')
-    except Error as e:
-        logger.critical(e)
-
+        MqttClient.connect(mqtt_host, mqtt_port, 60)
+        MqttClient.loop_forever()
+    except Exception as e:
+        logger.exception(e)
+    finally:
+        MqttClient.disconnect()
+        if DBConn is not None:
+            DBConn.disconnect()
 
 if __name__ == "__main__":
-    logger.info(f'####################  MqttToDatabase starts @{datetime.now()}  #####################')
-    try:
-        main()
-    except:
-        pass     # On any exception, sleep awhile, then quit.  Launchctl will restart.
-    logger.info('Main returned; program errored somehow.  Wait 10 min, then quit -- Launchctl will restart us.')
-    time.sleep(600)
-    logger.info(f'####################  MqttToDatabase all done @{datetime.now()}  #####################')
+    info(f'####################  {ProgName} starts  #####################')
+    main()
+    info(f'####################  {ProgName} all done  #####################')
     logging.shutdown()
     pass
