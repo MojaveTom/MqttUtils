@@ -100,7 +100,12 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, UsersData, msg):
     global Topics, DBConn, DBCursor, PP
     debug('in on_message: client "%s", UsersData "%s", msg "%s"', client, UsersData, msg)
-    decodedMsg = msg.payload.decode("utf-8")
+    try:
+        decodedMsg = msg.payload.decode("utf-8")
+    except Error as e:
+        logger.warning("Exception decoding a message; message ignored.")
+        logger.warning("Error message is: %s", e.msg)
+        return
     msgTopic = str(msg.topic)
     debug(f'Recieved topic "{msgTopic}", Recieved message {decodedMsg}, retained? {msg.retain}')
             # check for quit condition
