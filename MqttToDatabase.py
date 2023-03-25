@@ -135,14 +135,14 @@ def on_message(client, UsersData, msg):
                 finally:
                     info(f'Inserted message: "{SqlInsert}"')      # After execute SQL; want to minimize time between msg received and insert
             else:
-                info('Query NOT executed: "%s".'%SqlInsert)
+                info(f'Data message query NOT executed: "{SqlInsert}".')
         else:
             debug(f'Sql insert message query NOT executed because either the MsgTable or the DBSchema was not defined.')
 
     else:       # Retained message -- ignored if not a known status message
         debug(f'Retained message received.')
         try:
-            msgDict = json.loads(msg.payload)
+            msgDict = json.loads(decodedMsg)
             debug(f'The message payload was successfully decoded to a python object.  {msgDict}')
         except json.JSONDecodeError as e:
             debug(f'The retained message payload was not valid JSON, so it is ignored.')
@@ -188,6 +188,7 @@ def on_message(client, UsersData, msg):
             info(SqlInsert)
             if not dontWriteDb or PP.get('OnlyWriteDevices', False):
                 try:
+                    # info(f'SqlInsert just before execution "{SqlInsert}"')
                     DBCursor.execute(SqlInsert)
                     if DBConn.in_transaction: DBConn.commit()
                 except SqlError as e:
